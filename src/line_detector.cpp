@@ -20,17 +20,36 @@ public:
         image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/line_image", 10);
         cog_pub_ = this->create_publisher<std_msgs::msg::Float32MultiArray>("/line_cog", 10);
         is_cog_pub_ = this->create_publisher<std_msgs::msg::Bool>("/is_line_cog", 10);
+        twist_pub_ = this->create_publisher<std_msgs::msg::Float32MultiArray>("/cmd_vel", 10);
     }
 
 private:
+    void calculateTwist(int cx) {
+        // 画面中心からの偏差を計算
+        error_x = cx; // 画面中心x座標が320の場合
+
+        // vx = Kp_x * error_x;
+        // vy = 0.5;
+        omega = Kp_omega * error_x;
+
+        if(omega > 5*M_PI/180) omega = 5*M_PI/180; // 上限5度
+        if(omega < -5*M_PI/180) omega = -5*M_PI/180; // 下限-5度
+
+        // 制御信号をトピックでpublish
+        auto twist_msg = std_msgs::msg::Float32MultiArray();
+        twist_msg.data.push_back(vx);
+        twist_msg.data.push_back(vy);
+        twist_msg.data.push_back(omega);
+        twist_pub_->publish(twist_msg);
+    }
     void imageCallback(const sensor_msgs::msg::Image::SharedPtr msg)
     {
         try
         {
-            // 5フレームに1回だけ処理する
-            static int frame_count = 0;
-            frame_count++;
-            if(frame_count % 5 != 0) return; 
+            // 2フレームに1回だけ処理する
+            // static int frame_count = 0;
+            // frame_count++;
+            // if(frame_count % 2 != 0) return; 
 
             // ROS Image → OpenCV Mat (BGR形式)
             cv::Mat bgr = cv_bridge::toCvCopy(msg, "bgr8")->image;
@@ -98,12 +117,14 @@ private:
             int cx = static_cast<int>(m.m10 / m.m00);
             int cy = static_cast<int>(m.m01 / m.m00);
             const cv::Point2f moment_center = cv::Point2f(cx,cy);
-            // cv::circle(bgr, moment_center, 5, cv::Scalar(0, 0, 255), -1);
+            cv::circle(bgr, moment_center, 5, cv::Scalar(0, 0, 255), -1);
             cv::circle(extracted, moment_center, 5, cv::Scalar(0, 0, 255), -1);
             RCLCPP_INFO(this->get_logger(), "Line detected at (x, y) = (%d, %d)", cx - 320, cy - 240);
 
+
+            cv::drawContours(bgr, contours, -1, cv::Scalar(0,255,0), 2);
             // // 表示（デバッグ用）
-            // cv::imshow("Original", bgr);
+            cv::imshow("Original", bgr);
             // cv::imshow("Mask", mask);
             cv::imshow("Extracted", extracted);
             cv::waitKey(1);
@@ -113,8 +134,12 @@ private:
             messege_cog.data.push_back(cy - 240);  
             cog_pub_->publish(messege_cog);
 
+            calculateTwist(cx - 320); // 画面中心が320の場合
+
             // もし変数に保持したいなら extracted をクラスメンバに保存
             // latest_extracted_ = extracted.clone();
+
+
         }
         catch (cv_bridge::Exception &e)
         {
@@ -122,12 +147,21 @@ private:
         }
     }
 
+    float vx = 0;
+    float vy = 0;
+    float omega = 0;
+
+    int error_x = 0;
+    float Kp_x = 0.0f;
+    float Kp_omega = 0.5;
+
     bool is_cog = false;
 
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
     rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr cog_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr is_cog_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr twist_pub_;
 };
 
 int main(int argc, char **argv)
