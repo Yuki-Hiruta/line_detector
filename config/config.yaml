@@ -1,0 +1,11 @@
+/**:
+  ros__parameters:
+    Kp_x: 1.2
+    Kp_omega: 2.0
+    vy: 1.0
+    lower_h: 0
+    lower_s: 100
+    lower_v: 150
+    upper_h: 40
+    upper_s: 255
+    upper_v: 255
